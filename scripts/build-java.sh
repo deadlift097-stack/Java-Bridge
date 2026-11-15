@@ -9,9 +9,18 @@ D8="$(ls -d "$SDK"/build-tools/*/d8 | sort -V | tail -1)"
 ANDROID_JAR="$(ls -d "$SDK"/platforms/android-*/android.jar | sort -V | tail -1)"
 
 rm -rf "$OUT"; mkdir -p "$OUT/api-classes" "$OUT/hello-classes" "$OUT/mods"
-javac --release 8 -cp "$ANDROID_JAR" -d "$OUT/api-classes" $(find "$ROOT/java/api" -name '*.java')
+
+# javac @argfile with every path quoted: safe even if a folder or file name contains a space
+sources() { find "$1" -name '*.java' | sort | while IFS= read -r f; do printf '"%s"\n' "$f"; done; }
+sources "$ROOT/java/api" > "$OUT/api.src"
+sources "$ROOT/java/hello-java-mod" > "$OUT/hello.src"
+echo "api sources: $(wc -l < "$OUT/api.src"), hello sources: $(wc -l < "$OUT/hello.src")"
+if grep -q ' ' <(tr -d '"' < "$OUT/api.src" | sed "s|^$ROOT||"); then
+  echo "NOTE: some source paths contain spaces (building anyway):"; tr -d '"' < "$OUT/api.src" | grep ' ' || true
+fi
+javac --release 8 -cp "$ANDROID_JAR" -d "$OUT/api-classes" @"$OUT/api.src"
 jar cf "$OUT/api.jar" -C "$OUT/api-classes" .
-javac --release 8 -cp "$OUT/api.jar" -d "$OUT/hello-classes" $(find "$ROOT/java/hello-java-mod" -name '*.java')
+javac --release 8 -cp "$OUT/api.jar" -d "$OUT/hello-classes" @"$OUT/hello.src"
 jar cf "$OUT/hello.class.jar" -C "$OUT/hello-classes" .
 
 # Gson is not on Android, but many Fabric mods use it (Mod Menu, config code). Bundle it into the API dex.
